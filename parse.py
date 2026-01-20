@@ -91,6 +91,10 @@ class Parser:
         """
         if not self.match_chars("MAIL"):
             raise ParserError("mail-from-cmd")
+        self.whitespace()
+        if not self.match_chars("FROM:"):
+            raise ParserError("mail-from-cmd")
+        self.nullspace()
 
     def is_ascii(self, char: str) -> bool:
         """
@@ -102,6 +106,20 @@ class Parser:
         :rtype: bool
         """
         return 0 <= ord(char) <= 127
+
+    def rewind(self, new_position: int):
+        """
+        Rewinds the parser's position to a specified index.
+
+        :param self: Description
+        :param new_position: The position to rewind to.
+        """
+
+        if not (0 <= new_position <= self.OUT_OF_BOUNDS):
+            raise ValueError(f"""new_position must be within the bounds of the input string.
+                             actual: {new_position}, expected: [0, {self.OUT_OF_BOUNDS - 1}]""")
+
+        self.position = new_position
 
     def match_chars(self, expected: str) -> bool:
         """
@@ -115,7 +133,7 @@ class Parser:
         """
 
         if self.is_at_end():
-            raise ValueError("Input string has already been fully processed.")
+            return False
 
         if not expected:
             raise ValueError("Expected must be a non-empty string.")
@@ -133,24 +151,7 @@ class Parser:
 
         return True
 
-    def sp(self) -> bool:
-        """
-        Matches a single space or tab (\t) character. This is one of the
-        "non-trivial" non-terminals, so it would not generate a ParserError.
 
-        :param self: Description
-        :return: Description
-        :rtype: bool
-        """
-        if self.is_at_end():
-            return False
-
-        current = self.current_char()
-        if current == " " or current == "\t":
-            self.advance()
-            return True
-
-        return False
 
     def whitespace(self):
         """
@@ -182,7 +183,203 @@ class Parser:
         while self.sp():
             pass
 
+    def reverse_path(self):
+        """
+        The function that handles the <reverse-path> non-terminal.
 
+        :param self: Description
+        """
+
+    def domain(self, starting_position: int = -1) -> bool:
+        """
+        Docstring for domain
+
+        :param self: Description
+        :return: Description
+        :rtype: bool
+        """
+
+        original_position = self.position
+        if starting_position is not None and starting_position >= 0:
+            original_position = starting_position
+
+        print(f"Domain starting position is {original_position}")
+        if not self.element():
+            print("Domain element failed")
+            self.rewind(original_position)
+            return False
+
+        original_position = self.position
+        print(f"Domain element succeeded; saved position is {original_position}")
+        if not self.match_chars("."):
+            # Since there is no period, rewind and stop here
+            print("Domain period not found, rewinding")
+            self.rewind(original_position)
+            return True
+
+        print(f"Domain period is found; saved position is {original_position}")
+
+        # Since there is a period, see if there is another element. If not,
+        # rewind again and return True. We are rewinding to before the period
+        # since the period by itself is not enough for the "right-side" of the
+        # "or" operator in the <domain> non-terminal. Calling this checks
+        # for another element after the period.
+        if not self.domain(original_position):
+            print("Rewinding after failed domain check")
+            self.rewind(original_position)
+            return False
+
+        return True
+
+
+    def element(self, starting_position: int = -1) -> bool:
+        """
+        The function that handles the <element> non-terminal, which is:
+        <letter> | <name>
+
+        This means that an element can be a single letter. However, it is
+        possible since <name> starts with <letter> that we check for <name>
+        first to get the longest match possible. For this to work, I'll need
+        to account for the possibility that <name> could fail.
+
+        :param self: Description
+        :return: Description
+        :rtype: bool
+        """
+
+        original_position = self.position
+        if starting_position is not None and starting_position >= 0:
+            original_position = starting_position
+
+        if self.name():
+            return True
+
+        # If name failed, that means there were only 0 or 1 letters. Rewind
+        # the cursor so that we can check for <letter>.
+        self.rewind(original_position)
+        return self.letter()
+
+    def name(self):
+        """
+        The function that handles the <name> non-terminal, which is:
+        <letter> <let-dig-str>
+
+        :param self: Description
+        """
+
+        return self.letter() and self.let_dig_str()
+
+    def let_dig_str(self) -> bool:
+        """
+        The function that handles the <let-dig-str> non-terminal. This works
+        just like the <whitespace> non-terminal, where at least 1 letter or
+        digit is required.
+
+        :param self: Description
+        :return: Description
+        :rtype: bool
+        """
+
+        if not self.let_dig():
+            return False
+
+        while self.let_dig():
+            pass
+
+        return True
+
+    def let_dig(self):
+        """
+        The function that handles the <let-dig> non-terminal.
+
+        :param self: Description
+        """
+
+        return self.letter() or self.digit()
+
+    def char_in_set(self, char_set: set) -> bool:
+        """
+        Reusable function that checks if the current character is in the
+        provided set of characters. This helps reduce code duplication for a
+        number of trivial non-terminals.
+        """
+        if self.is_at_end():
+            return False
+
+        if len(char_set) == 0:
+            raise ValueError("char_set must be a non-empty set of characters.")
+
+        if self.current_char() in char_set:
+            self.advance()
+            return True
+
+        return False
+
+    def sp(self) -> bool:
+        """
+        Matches a single space or tab (\t) character. This is one of the
+        "non-trivial" non-terminals, so it would not generate a ParserError.
+
+        :param self: Description
+        :return: Description
+        :rtype: bool
+        """
+        special_chars = set(" \t")
+        return self.char_in_set(special_chars)
+
+    def letter(self) -> bool:
+        """
+        Returns True if the current character is a letter (A-Z, a-z).
+
+        :param self: Description
+        :return: Description
+        """
+
+        special_chars = set(
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+        )
+        return self.char_in_set(special_chars)
+
+    def digit(self) -> bool:
+        """
+        Returns True if the current character is a digit (0-9).
+
+        :param self: Description
+        :return: Description
+        :rtype: bool
+        """
+
+        # WARNING: Do NOT use str.isdigit because it includes more than just 0-9!
+        # https://docs.python.org/3/library/stdtypes.html#str.isdigit
+        special_chars = set("0123456789")
+        return self.char_in_set(special_chars)
+
+    def crlf(self) -> bool:
+        """
+        According to the grammar, matches a single newline character, \n.
+        I suppose we don't have to worry about \r.
+
+        :param self: Description
+        :return: Description
+        :rtype: bool
+        """
+        special_chars = set("\n")
+        return self.char_in_set(special_chars)
+
+    def special(self) -> bool:
+        """
+        Matches a single "special" character as defined in the HW1 writeup.
+
+        :param self: Description
+        :return: Description
+        :rtype: bool
+        """
+        # This is a cool trick: calling set() on a string creates a unique
+        # list of characters in that string
+        # The slash had to be escaped for this to work, just like the double
+        # quote.
+        special_chars = set("<>()[]\\.,;:@\"")
+        return self.char_in_set(special_chars)
 
 
 if __name__ == "__main__":
@@ -193,8 +390,10 @@ if __name__ == "__main__":
 
             # Create a Parser object to parse this line
             parser = Parser(line)
+            print(line)
             # Actually invoke the parser to start with the <mail-from-cmd> non-terminal
-            parser.mail_from_cmd()
+            # parser.mail_from_cmd()
+            parser.domain()
             # If we reach here, the line was successfully parsed
             print("Sender OK")
         except EOFError:
