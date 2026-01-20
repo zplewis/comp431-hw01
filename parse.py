@@ -4,6 +4,8 @@
 HW1: Parsing in Python
 """
 
+import sys
+
 class ParserError(Exception):
     """
     Raised when a parsing error occurs.
@@ -520,11 +522,14 @@ if __name__ == "__main__":
     while True:
         try:
             # read one line from standard input
-            line = input()
+            # line = input()
+            line = sys.stdin.readline()
+            if not line or line == "":
+                break
 
             # Create a Parser object to parse this line
             parser = Parser(line)
-            print(line)
+            print(line.strip())
             # Actually invoke the parser to start with the <mail-from-cmd> non-terminal
             parser.mail_from_cmd()
             # parser.domain()
@@ -537,7 +542,7 @@ if __name__ == "__main__":
             # Ctrl+C
             break
         except ParserError as pe:
-            "If a parsing error occurs, print it and continue to the next line."
+            # "If a parsing error occurs, print it and continue to the next line."
             print(pe)
             continue
         except Exception as e:
